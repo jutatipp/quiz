@@ -1,22 +1,15 @@
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #ffffff;   /* สีพื้นหลัง */
+  --foreground: #171717;   /* สีตัวอักษร */
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  color-scheme: light; /* บังคับโหมดสว่าง */
 }
 
-html,
 body {
   max-width: 100vw;
   overflow-x: hidden;
-}
-
-body {
   color: var(--foreground);
   background: var(--background);
   font-family: Arial, Helvetica, sans-serif;
@@ -33,10 +26,4 @@ body {
 a {
   color: inherit;
   text-decoration: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
 }
