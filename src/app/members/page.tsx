@@ -30,84 +30,78 @@ export default function MembersPage() {
     if (!isReady) return;
     setIsLoading(true); setError(null);
     try {
-      const response = await apiRequest<MembersResponse>({ path: `/classroom/class?year=${encodeURIComponent(year)}`, method: "GET" });
-      setMembers(response.data); setHasSearched(true);
-    } catch (apiError) {
-      const message = typeof apiError === "object" && apiError !== null && "message" in apiError
-        ? String((apiError as { message: unknown }).message) : "Unable to fetch class members";
-      setError(message); setMembers([]);
-    } finally { setIsLoading(false); }
+      const res = await apiRequest<MembersResponse>({ path: `/classroom/class?year=${encodeURIComponent(year)}`, method: "GET" });
+      setMembers(res.data); setHasSearched(true);
+    } catch (e:any) { setError(e?.message ?? "Unable to fetch class members"); setMembers([]); }
+    finally { setIsLoading(false); }
   };
 
-  const list = members.filter(m => {
-    const text = `${m.firstname} ${m.lastname} ${m.email}`.toLowerCase();
-    return text.includes(q.toLowerCase());
-  });
+  const list = members.filter(m => `${m.firstname} ${m.lastname} ${m.email}`.toLowerCase().includes(q.toLowerCase()));
 
   return (
-  <section className="section">
-    <div className="container grid" style={{gap:"20px"}}>
-      <header>
-        <p className="badge">Cohort directory</p>
-        <h1 style={{fontSize:"clamp(2rem,4vw,2.6rem)", marginTop:"6px"}}>Search classmates by year</h1>
-        <p className="kicker">Filter by enrollment year and quick-search by name/email.</p>
-      </header>
+    <section className="section">
+      <div className="container grid" style={{gap:"20px"}}>
+        <header>
+          <p className="badge">Cohort directory</p>
+          <h1 style={{fontSize:"clamp(2rem,4vw,2.6rem)", marginTop:"6px"}}>Search classmates by year</h1>
+          <p className="kicker">Filter by enrollment year and quick-search by name/email.</p>
+        </header>
 
-      <form onSubmit={handleSubmit} className="card" style={{padding:"16px", display:"grid", gap:"12px"}}>
-        <div style={{display:"grid", gap:"12px"}}>
-          <label className="grid" style={{gap:"6px", maxWidth:"260px"}}>
-            <span style={{fontWeight:800}}>Enrollment year (CE)</span>
-            <input className="input" type="number" min="1900" max="2100" value={year}
-                   onChange={(e)=> setYear(e.target.value)} placeholder="2024"/>
-          </label>
+        <form onSubmit={handleSubmit} className="card" style={{padding:"16px", display:"grid", gap:"12px"}}>
+          <div style={{display:"grid", gap:"12px"}}>
+            <label className="grid" style={{gap:"6px", maxWidth:"260px"}}>
+              <span style={{fontWeight:800}}>Enrollment year (CE)</span>
+              <input className="input" type="number" min="1900" max="2100" value={year}
+                     onChange={(e)=> setYear(e.target.value)} placeholder="2024"/>
+            </label>
 
-          <div style={{display:"flex",flexWrap:"wrap",gap:"8px"}}>
-            {yearOptions.map(opt=>(
-              <button key={opt} type="button"
-                      className={`btn ${opt===year ? "btn--primary":"btn--muted"}`}
-                      onClick={()=> setYear(opt)} aria-pressed={opt===year}>{opt}</button>
-            ))}
+            <div style={{display:"flex",flexWrap:"wrap",gap:"8px"}}>
+              {yearOptions.map(opt=>(
+                <button key={opt} type="button"
+                        className={`btn ${opt===year ? "btn--primary":"btn--muted"}`}
+                        onClick={()=> setYear(opt)} aria-pressed={opt===year}>{opt}</button>
+              ))}
+            </div>
+
+            <label className="grid" style={{gap:"6px"}}>
+              <span style={{fontWeight:800}}>Search</span>
+              <input className="input" placeholder="Type a name or email..." value={q} onChange={(e)=> setQ(e.target.value)}/>
+            </label>
           </div>
 
-          <label className="grid" style={{gap:"6px"}}>
-            <span style={{fontWeight:800}}>Search</span>
-            <input className="input" placeholder="Type a name or email..." value={q} onChange={(e)=> setQ(e.target.value)}/>
-          </label>
-        </div>
+          <div style={{display:"flex",gap:"12px"}}>
+            <button className="btn btn--primary" type="submit" disabled={isLoading}>{isLoading?"Loading...":"Search"}</button>
+            <button className="btn btn--muted" type="button" onClick={()=> setQ("")}>Clear</button>
+          </div>
+        </form>
 
-        <div style={{display:"flex",gap:"12px"}}>
-          <button className="btn btn--primary" type="submit" disabled={isLoading}>{isLoading?"Loading...":"Search"}</button>
-          <button className="btn btn--muted" type="button" onClick={()=> setQ("")}>Clear</button>
-        </div>
-      </form>
+        {!user && isReady && <p style={{color:"#8a1f16", fontWeight:800}}>Please sign in so we can attach your token.</p>}
+        {error && <div className="card" style={{padding:"14px", color:"#8a1f16", fontWeight:800}}>{error}</div>}
+        {hasSearched && !error && list.length===0 && <p className="kicker">No classmates found for {year}.</p>}
 
-      {error && <div className="card" style={{padding:"14px", color:"#8a1f16", fontWeight:800}}>{error}</div>}
-      {hasSearched && !error && list.length===0 && <p className="kicker">No classmates found for {year}.</p>}
-
-      {list.length>0 && (
-        <ul className="grid grid--cards">
-          {list.map(m=>(
-            <li key={m._id} className="card" style={{padding:"18px"}}>
-              <div style={{display:"flex",gap:"12px",alignItems:"center"}}>
-                <div className="avatar avatar--lg" aria-hidden />
-                <div>
-                  <div style={{fontWeight:800}}>{m.firstname} {m.lastname}</div>
-                  <div className="kicker">{m.email}</div>
+        {list.length>0 && (
+          <ul className="grid grid--cards">
+            {list.map(m=>(
+              <li key={m._id} className="card" style={{padding:"18px"}}>
+                <div style={{display:"flex",gap:"12px",alignItems:"center"}}>
+                  <div className="avatar avatar--lg" aria-hidden />
+                  <div>
+                    <div style={{fontWeight:800}}>{m.firstname} {m.lastname}</div>
+                    <div className="kicker">{m.email}</div>
+                  </div>
                 </div>
-              </div>
-              <div style={{marginTop:"10px",fontSize:".96rem"}}>
-                {m.education?.major && <p><strong>Major:</strong> {m.education.major}</p>}
-                {m.education?.studentId && <p><strong>Student ID:</strong> {m.education.studentId}</p>}
-                {m.education?.school?.name && (
-                  <p><strong>School:</strong> {m.education.school.name}{m.education.school.province?`, ${m.education.school.province}`:""}</p>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  </section>
-);
-
+                <div style={{marginTop:"10px",fontSize:".96rem"}}>
+                  {m.education?.major && <p><strong>Major:</strong> {m.education.major}</p>}
+                  {m.education?.studentId && <p><strong>Student ID:</strong> {m.education.studentId}</p>}
+                  {m.education?.school?.name && (
+                    <p><strong>School:</strong> {m.education.school.name}{m.education.school.province?`, ${m.education.school.province}`:""}</p>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
 }
