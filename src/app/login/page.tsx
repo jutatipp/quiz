@@ -1,68 +1,82 @@
-"use client";
-import { useEffect, useState } from "react";
+'use client';
+
+import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material";
-import AuthService from "@/libs/AuthService";
+import { useAuth } from "@/contexts/auth-context";
+import { apiRequest } from "@/lib/api-client";
+import type { StoredUser } from "@/lib/auth-storage";
+
+interface SignInResponse {
+  data: {
+    _id: string; firstname: string; lastname: string; email: string;
+    image?: string; role?: string; type?: string; token: string;
+  };
+}
 
 export default function LoginPage() {
   const router = useRouter();
-  const [username, setUsername] = useState("่jutatip.ph");   // ค่าเริ่มต้นทดสอบ
-  const [password, setPassword] = useState("123456"); // ค่าเริ่มต้นทดสอบ
-  const [error, setError] = useState("");
+  const { login, logout, user } = useAuth();
+  const [email, setEmail] = useState(""); const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // ถ้าล็อกอินค้างไว้แล้วให้เด้งไป /feed
-  useEffect(() => {
-    const raw = localStorage.getItem("appUser");
-    if (raw) router.replace("/feed");
-  }, [router]);
-
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError(null); setSuccess(null);
+    const trimmedEmail = email.trim(); const trimmedPassword = password.trim();
+    if (!trimmedEmail || !trimmedPassword) { setError("Please provide both email and password"); return; }
+    setIsSubmitting(true);
     try {
-      const { user, token } = await AuthService.login(username.trim(), password.trim());
-      localStorage.setItem("appUser", JSON.stringify(user));
-      if (token) localStorage.setItem("appToken", token);
-      router.push("/feed");
-    } catch (err: any) {
-      setError(err.message || "เข้าสู่ระบบไม่สำเร็จ");
-    }
+      const response = await apiRequest<SignInResponse>({
+        path: "/auth/signin", method: "POST", requiresAuth: false,
+        body: { email: trimmedEmail, password: trimmedPassword },
+      });
+      const sessionUser: StoredUser = {
+        _id: response.data._id, firstname: response.data.firstname, lastname: response.data.lastname,
+        email: response.data.email, image: response.data.image, role: response.data.role, type: response.data.type,
+      };
+      login({ token: response.data.token, user: sessionUser });
+      setSuccess("Signed in successfully. Redirecting to profile...");
+      router.push("/profile");
+    } catch (apiError) {
+      const message = typeof apiError === "object" && apiError !== null && "message" in apiError
+        ? String((apiError as { message: unknown }).message)
+        : "Unable to sign in. Please verify your credentials.";
+      setError(message);
+    } finally { setIsSubmitting(false); }
   };
 
-  return (
-    <Card sx={{ maxWidth: 420, mx: "auto", mt: 6 }}>
-      <CardContent>
-        <Typography variant="h5" fontWeight={700} mb={2}>เข้าสู่ระบบ</Typography>
-        <Box component="form" onSubmit={onSubmit}>
-          <Stack spacing={2}>
-            <TextField
-              label="Username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              fullWidth
-              autoComplete="username"
-            />
-            <TextField
-              label="Password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              fullWidth
-              autoComplete="current-password"
-            />
-            {error && <Typography color="error">{error}</Typography>}
-            <Button type="submit" variant="contained">Login</Button>
-          </Stack>
-        </Box>
-      </CardContent>
-    </Card>
-  );
+  const handleLogout = () => { logout(); setEmail(""); setPassword(""); setSuccess("You have been signed out."); };
+
+return (
+  <section className="section" style={{minHeight:"65vh", display:"grid", placeItems:"center",
+    background: "linear-gradient(135deg,#fff 0%,#f8f8fb 50%,#fcf7e2 100%)"}}>
+    <div className="card glass" style={{width:"min(480px,100%)", padding:"28px"}}>
+      <p className="badge">Sign in with your CIS account</p>
+      <h1 style={{fontSize:"clamp(1.9rem,4vw,2.4rem)", margin:"10px 0 6px"}}>Sign in</h1>
+      <p className="kicker" style={{marginBottom:"16px"}}>Enter your CIS credentials to access classroom services.</p>
+
+      <form onSubmit={handleSubmit} className="grid" style={{gap:"14px"}}>
+        <label className="grid" style={{gap:"6px"}}>
+          <span style={{fontWeight:800}}>Email</span>
+          <input className="input" type="email" required value={email}
+                 onChange={(e)=> setEmail(e.target.value)} placeholder="user@example.com" autoComplete="email"/>
+        </label>
+        <label className="grid" style={{gap:"6px"}}>
+          <span style={{fontWeight:800}}>Password</span>
+          <input className="input" type="password" required value={password}
+                 onChange={(e)=> setPassword(e.target.value)} placeholder="********" autoComplete="current-password"/>
+        </label>
+
+        {error && <p style={{color:"#8a1f16", fontWeight:800}}>{error}</p>}
+        {success && <p style={{color:"#106a36", fontWeight:800}}>{success}</p>}
+
+        <button type="submit" disabled={isSubmitting} className="btn btn--primary">
+          {isSubmitting ? "Signing in..." : "Sign in"}
+        </button>
+      </form>
+    </div>
+  </section>
+);
 }
