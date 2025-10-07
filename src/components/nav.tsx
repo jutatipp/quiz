@@ -1,18 +1,30 @@
-'use client';
+"use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-export default function Nav(){
-  const pathname = usePathname() || "";
-  const is = (x:string)=> (pathname===x || pathname.startsWith(x + "/")) ? {"aria-current":"page" as const} : {};
+export function Navbar(){
+  const pathname = usePathname();
+  const is = (p:string)=> (pathname?.startsWith(p) ? "page" : undefined);
+
   return (
-    <div className="nav" role="navigation" aria-label="Main">
-      <div className="nav__pill">
-        <Link href="/profile"  {...is("/profile")}>โปรไฟล์</Link>
-        <Link href="/members"  {...is("/members")}>นักศึกษา</Link>
-        <Link href="/statuses" {...is("/statuses")}>ฟีด</Link>
+    <header className="nav">
+      <div className="container" style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <Link href="/profile" className="nav__brand">KKU Classroom</Link>
+
+        <nav className="only-desktop" style={{display:"flex",gap:8}}>
+          <Link className="nav__link" aria-current={is("/profile")}  href="/profile">โปรไฟล์</Link>
+          <Link className="nav__link" aria-current={is("/members")}  href="/members">สมาชิก</Link>
+          <Link className="nav__link" aria-current={is("/statuses")} href="/statuses">สถานะ</Link>
+        </nav>
+
+        <div className="only-mobile" style={{minWidth:160}}>
+          <select className="input" defaultValue="/profile" onChange={(e)=>location.href=e.target.value}>
+            <option value="/profile">โปรไฟล์</option>
+            <option value="/members">สมาชิก</option>
+            <option value="/statuses">สถานะ</option>
+          </select>
+        </div>
       </div>
-      <div className="nav__icon" title="ตั้งค่า">⚙️</div>
-    </div>
+    </header>
   );
 }

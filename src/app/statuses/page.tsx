@@ -1,205 +1,196 @@
 'use client';
-
-import Image from "next/image";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { apiRequest } from "@/lib/api-client";
 
-interface ProfileData {
-  _id: string;
-  firstname: string;
-  lastname: string;
-  email: string;
-  image?: string;
-  role?: string;
-  type?: string;
-  confirmed?: boolean;
-  education?: {
-    major?: string;
-    enrollmentYear?: string;
-    studentId?: string;
-    school?: {
-      _id?: string;
-      name?: string;
-      province?: string;
-      logo?: string;
-    };
-    advisor?: {
-      _id?: string;
-      name?: string;
-      email?: string;
-      image?: string;
-    };
-    image?: string;
-  };
-  job?: unknown[];
-  createdAt?: string;
-  updatedAt?: string;
+interface StatusAuthor { _id?:string; name?:string; email?:string; image?:string; }
+interface StatusComment { _id:string; content:string; createdBy:string|StatusAuthor; like?:Array<string|StatusAuthor>; createdAt?:string; }
+interface StatusItem { _id:string; content:string; createdBy:string|StatusAuthor; like?:Array<string|StatusAuthor>; likeCount?:number; hasLiked?:boolean; comment?:StatusComment[]; createdAt?:string; updatedAt?:string; }
+interface StatusListResponse { data: StatusItem[]; }
+interface StatusMutationResponse { data: StatusItem; }
+
+function displayName(src: StatusItem["createdBy"]){ if(!src) return "Unknown"; return typeof src==="string"? src : (src.name ?? src.email ?? "Unknown"); }
+function formatDate(v?:string){ if(!v) return ""; try{ return new Date(v).toLocaleString("th-TH",{dateStyle:"medium", timeStyle:"short"});}catch{ return v; } }
+function isOwned(entry:string|StatusAuthor|undefined, id?:string, email?:string){
+  if(!entry) return false; if(typeof entry==="string") return entry===id || entry===email;
+  return entry._id===id || (!!email && entry.email===email);
+}
+function normalizeStatus(s:StatusItem, id?:string, email?:string):StatusItem{
+  const likes = s.like ?? []; const likeCount = typeof s.likeCount==="number" ? s.likeCount : likes.length;
+  let hasLiked = s.hasLiked ?? false; if(!hasLiked){ hasLiked = likes.some(e=> isOwned(e,id,email)); }
+  return {...s, like:likes, likeCount, hasLiked, comment: s.comment ?? []};
 }
 
-interface ProfileResponse {
-  data: ProfileData;
-}
+export default function StatusesPage(){
+  const { isReady, user } = useAuth();
+  const [statuses,setStatuses]=useState<StatusItem[]>([]);
+  const [isLoading,setIsLoading]=useState(false);
+  const [error,setError]=useState<string|null>(null);
+  const [composer,setComposer]=useState("");
+  const [isPublishing,setIsPublishing]=useState(false);
+  const [commentDrafts,setCommentDrafts]=useState<Record<string,string>>({});
+  const [commentPending,setCommentPending]=useState<Record<string,boolean>>({});
+  const [likePending,setLikePending]=useState<Record<string,boolean>>({});
 
-const quickLinks = [
-  {
-    href: "/members",
-    title: "Cohort directory",
-    description: "Browse classmates filtered by enrollment year.",
-  },
-  {
-    href: "/statuses",
-    title: "Status board",
-    description: "Post updates, comment, and react to classmates' statuses.",
-  },
-];
+  const uid = user?._id; const uemail = user?.email;
+  const isAuth = useMemo(()=> isReady && !!user, [isReady, user]);
 
-function normalizeProfile(data: ProfileData): ProfileData {
-  return { ...data, education: data.education ?? {} };
-}
+  const refresh = useCallback(async ()=>{
+    if(!isAuth){ setStatuses([]); setIsLoading(false); return; }
+    setIsLoading(true); setError(null);
+    try{
+      const res = await apiRequest<StatusListResponse>({ path:"/classroom/status", method:"GET" });
+      setStatuses((res.data ?? []).map(x=>normalizeStatus(x, uid, uemail)));
+    }catch(err:any){
+      setError(err?.message || "Unable to load status feed");
+    }finally{ setIsLoading(false); }
+  }, [isAuth, uid, uemail]);
 
-export default function ProfilePage() {
-  const router = useRouter();
-  const { isReady, user, logout } = useAuth();
-  const [profile, setProfile] = useState<ProfileData | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  useEffect(()=>{ void refresh(); }, [refresh]);
 
-  const displayName = useMemo(() => {
-    if (!profile) return "";
-    return `${profile.firstname ?? ""} ${profile.lastname ?? ""}`.trim();
-  }, [profile]);
+  const likeLabel = (s:StatusItem)=>{ const c = s.likeCount ?? s.like?.length ?? 0; return c===0? "Be the first to like" : (c===1? "1 like" : `${c} likes`); };
 
-  useEffect(() => {
-    if (isReady && !user) router.replace("/login");
-  }, [isReady, user, router]);
-
-  useEffect(() => {
-    if (!isReady || !user) return;
-    const fetchProfile = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const response = await apiRequest<ProfileResponse>({ path: "/classroom/profile", method: "GET" });
-        setProfile(normalizeProfile(response.data));
-      } catch (e: any) {
-        setError(e?.message ?? "Unable to load profile information");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchProfile();
-  }, [isReady, user]);
-
-  const handleLogout = () => {
-    logout();
-    router.push("/login");
+  const handlePublish = async (e:FormEvent<HTMLFormElement>)=>{
+    e.preventDefault(); if(!composer.trim()){ setError("Please write something before publishing"); return; }
+    setIsPublishing(true); setError(null);
+    try{
+      const res = await apiRequest<StatusMutationResponse>({ path:"/classroom/status", method:"POST", body:{ content: composer.trim() } });
+      if(!res.data){ await refresh(); return; }
+      setStatuses(prev=> [normalizeStatus(res.data, uid, uemail), ...prev]); setComposer("");
+    }catch(err:any){ setError(err?.message || "Unable to publish status"); }
+    finally{ setIsPublishing(false); }
   };
 
-  if (!isReady) {
+  const handleComment = async (statusId:string)=>{
+    const draft = commentDrafts[statusId]?.trim(); if(!draft) return;
+    setCommentPending(p=>({...p,[statusId]:true})); setError(null);
+    try{
+      const res = await apiRequest<StatusMutationResponse>({ path:"/classroom/comment", method:"POST", body:{ content:draft, statusId } });
+      if(!res.data){ await refresh(); return; }
+      const ns = normalizeStatus(res.data, uid, uemail);
+      setStatuses(prev=> prev.map(it=> it._id===statusId? ns : it)); setCommentDrafts(prev=>({...prev,[statusId]:""}));
+    }catch(err:any){ setError(err?.message || "Unable to add comment"); }
+    finally{ setCommentPending(p=>({...p,[statusId]:false})); }
+  };
+
+  const toggleLike = async (s:StatusItem)=>{
+    const id = s._id; const cur = !!s.hasLiked;
+    setLikePending(p=>({...p,[id]:true})); setError(null);
+    const optimistic = normalizeStatus({...s, likeCount:(s.likeCount ?? s.like?.length ?? 0) + (cur?-1:1), hasLiked:!cur}, uid, uemail);
+    setStatuses(prev=> prev.map(it=> it._id===id? optimistic: it));
+    try{
+      const res = await apiRequest<StatusMutationResponse>({ path:"/classroom/like", method:"POST", body:{ statusId:id, action: cur? "unlike":"like" }});
+      if(!res.data){ await refresh(); return; }
+      const ns = normalizeStatus(res.data, uid, uemail);
+      setStatuses(prev=> prev.map(it=> it._id===id? ns: it));
+    }catch(err:any){
+      setError(err?.message || "Unable to update like status");
+      setStatuses(prev=> prev.map(it=> it._id===id? s: it));
+    }finally{ setLikePending(p=>({...p,[id]:false})); }
+  };
+
+  if(!isReady){ return (<section className="container" style={{ paddingBlock:24 }}><p className="lead">Loading session...</p></section>); }
+  if(!user){
     return (
-      <section className="section">
-        <div className="container"><p>Loading session...</p></div>
+      <section className="stack-24">
+        <header className="stack-12">
+          <span className="badge">Share updates with your cohort</span>
+          <h1 className="h1">Status board</h1>
+          <p className="lead">Please sign in to view and interact with statuses.</p>
+        </header>
       </section>
     );
   }
-  if (!user) return null;
 
   return (
-    <section className="section">
-      <div className="container grid" style={{ gap: 20 }}>
-        {/* Header */}
-        <header className="card" style={{ padding: 20, display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            {profile?.image ? (
-              <Image src={profile.image} alt={displayName || "Profile photo"} width={72} height={72} style={{ borderRadius: 20, objectFit: "cover" }} />
-            ) : (
-              <div className="avatar avatar--lg" aria-hidden />
-            )}
-            <div>
-              <p className="badge">Signed in via CIS</p>
-              <h1 style={{ fontSize: "clamp(2rem, 4.8vw, 2.8rem)", lineHeight: 1.1, marginTop: 6 }}>
-                {displayName || user.firstname}
-              </h1>
-              <p className="kicker">{profile?.email ?? user.email}</p>
-            </div>
-          </div>
-          <button type="button" onClick={handleLogout} className="btn btn--muted">Sign out</button>
-        </header>
+    <section className="stack-24">
+      <header className="stack-12">
+        <span className="badge">Share updates with your cohort</span>
+        <h1 className="h1">Status board</h1>
+        <p className="lead">Post quick updates, discuss with classmates, and celebrate each other.</p>
+      </header>
 
-        {/* Quick links */}
-        <div className="grid grid--cards">
-          {quickLinks.map((card) => (
-            <Link key={card.href} href={card.href} className="card" style={{ padding: 22 }}>
-              <p className="badge">Quick access</p>
-              <h2 style={{ fontSize: "1.35rem", fontWeight: 800, marginTop: 8 }}>{card.title}</h2>
-              <p className="kicker" style={{ marginTop: 6 }}>{card.description}</p>
-              <span className="btn btn--primary" style={{ marginTop: 14, width: "fit-content" }}>
-                Go to {card.title}
-              </span>
-            </Link>
-          ))}
+      <form onSubmit={handlePublish} className="panel stack-16" style={{ padding:16 }}>
+        <label className="stack-12">
+          <span style={{ fontWeight:800 }}>Create a status</span>
+          <textarea className="textarea" rows={4} value={composer} onChange={(e)=>setComposer(e.target.value)} placeholder="Share something with your classmates..." />
+        </label>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <p className="lead" style={{ fontSize:"0.95rem" }}>Posting as {user.firstname} {user.lastname}</p>
+          <button className="btn btn--primary" type="submit" disabled={isPublishing}>{isPublishing? "Publishing..." : "Publish"}</button>
         </div>
+      </form>
 
-        {/* Error/Loading */}
-        {error && (
-          <div className="card" style={{ padding: 16, color: "#8a1f16", fontWeight: 800 }}>{error}</div>
-        )}
-        {isLoading && <div className="card" style={{ padding: 16 }}>Loading profile details...</div>}
+      {error && <div className="card" style={{ padding:16, borderColor:"#FFD1CC", background:"#FFF2F0" }}>{error}</div>}
+      {isLoading && (
+        <div className="card" style={{ padding:16 }}>
+          <div className="skel" style={{height:14, width:"70%", marginBottom:10}}></div>
+          <div className="skel" style={{height:14, width:"90%"}}></div>
+        </div>
+      )}
+      {!isLoading && statuses.length===0 && <p className="lead">No statuses yet. Be the first!</p>}
 
-        {/* Details */}
-        {profile && (
-          <div className="grid grid--cards">
-            <article className="card" style={{ padding: 22 }}>
-              <h2 style={{ fontSize: "1.2rem", fontWeight: 800 }}>Account</h2>
-              <div style={{ marginTop: 10, lineHeight: 1.7 }}>
-                {profile.role && <p><strong>Role:</strong> {profile.role}</p>}
-                {profile.type && <p><strong>Program type:</strong> {profile.type}</p>}
-                <p><strong>Verification:</strong> {profile.confirmed ? "Verified" : "Pending"}</p>
-                {profile.createdAt && (
-                  <p className="kicker">Member since {new Date(profile.createdAt).toLocaleDateString("th-TH")}</p>
-                )}
-              </div>
-            </article>
+      <div className="stack-24">
+        {statuses.map((s)=>{
+          const likeText = likeLabel(s);
+          const comments = s.comment ?? [];
+          const draft = commentDrafts[s._id] ?? "";
 
-            <article className="card" style={{ padding: 22 }}>
-              <h2 style={{ fontSize: "1.2rem", fontWeight: 800 }}>Education</h2>
-              <div style={{ marginTop: 10, lineHeight: 1.7 }}>
-                {profile.education?.major && <p><strong>Major:</strong> {profile.education.major}</p>}
-                {profile.education?.enrollmentYear && <p><strong>Enrollment year:</strong> {profile.education.enrollmentYear}</p>}
-                {profile.education?.studentId && <p><strong>Student ID:</strong> {profile.education.studentId}</p>}
-                {profile.education?.school?.name && (
-                  <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 6 }}>
-                    {profile.education.school.logo ? (
-                      <Image src={profile.education.school.logo} alt={profile.education.school.name ?? "School logo"} width={44} height={44} style={{ borderRadius: 12, objectFit: "cover" }} />
-                    ) : <div className="avatar" aria-hidden />}
-                    <div>
-                      <p><strong>School:</strong> {profile.education.school.name}</p>
-                      {profile.education.school.province && <p className="kicker">{profile.education.school.province}</p>}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </article>
-
-            {profile.education?.advisor && (
-              <article className="card" style={{ padding: 22 }}>
-                <h2 style={{ fontSize: "1.2rem", fontWeight: 800 }}>Advisor</h2>
-                <div style={{ display: "flex", gap: 14, alignItems: "center", marginTop: 10 }}>
-                  {profile.education.advisor.image ? (
-                    <Image src={profile.education.advisor.image} alt={profile.education.advisor.name ?? "Advisor"} width={56} height={56} style={{ borderRadius: 16, objectFit: "cover" }} />
-                  ) : <div className="avatar avatar--lg" aria-hidden />}
-                  <div>
-                    <p style={{ fontWeight: 800 }}>{profile.education.advisor.name}</p>
-                    {profile.education.advisor.email && <p className="kicker">{profile.education.advisor.email}</p>}
-                  </div>
+          return (
+            <article key={s._id} className="card stack-16 card--hover" style={{ padding:16 }}>
+              <header style={{ display:"flex", alignItems:"center", gap:12 }}>
+                <div style={{ width:44, height:44, borderRadius:999, background:"linear-gradient(135deg, #FFF1B6, #F5B800)" }} />
+                <div>
+                  <h2 style={{ fontSize:"1.05rem", fontWeight:900 }}>{displayName(s.createdBy)}</h2>
+                  {s.createdAt && <span className="lead" style={{ fontSize:"0.9rem" }}>{formatDate(s.createdAt)}</span>}
                 </div>
-              </article>
-            )}
-          </div>
-        )}
+              </header>
+
+              <p style={{ fontSize:"1.05rem", lineHeight:1.6 }}>{s.content}</p>
+
+              <div style={{ display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+                <button type="button"
+                  onClick={()=>toggleLike(s)}
+                  disabled={likePending[s._id]}
+                  className="btn btn--ghost"
+                  style={{
+                    height:36, padding:"0 14px",
+                    borderColor: s.hasLiked ? "var(--brand-500)" : "var(--line)",
+                    background: s.hasLiked ? "#FFF5CC" : "var(--surface-2)"
+                  }}>
+                  {s.hasLiked ? `Unlike (${likeText})` : likeText}
+                </button>
+                <span className="lead" style={{ fontSize:"0.9rem" }}>{comments.length} comment{comments.length!==1?"s":""}</span>
+              </div>
+
+              {comments.length>0 && (
+                <div className="stack-12">
+                  {comments.map((c)=>(
+                    <div key={c._id} className="panel" style={{ padding:12 }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", gap:12 }}>
+                        <strong>{displayName(c.createdBy as any)}</strong>
+                        {c.createdAt && <span className="lead" style={{ fontSize:"0.85rem" }}>{formatDate(c.createdAt)}</span>}
+                      </div>
+                      <p style={{ marginTop:8 }}>{c.content}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="stack-12">
+                <label className="stack-12">
+                  <span style={{ fontWeight:800 }}>Add a comment</span>
+                  <textarea className="textarea" rows={3} value={draft}
+                    onChange={(e)=> setCommentDrafts(prev=>({ ...prev, [s._id]: e.target.value })) }
+                    placeholder="Share your thoughts..." />
+                </label>
+                <button type="button" onClick={()=>handleComment(s._id)} disabled={commentPending[s._id]} className="btn btn--primary" style={{ alignSelf:"flex-start" }}>
+                  {commentPending[s._id] ? "Posting..." : "Comment"}
+                </button>
+              </div>
+            </article>
+          );
+        })}
       </div>
     </section>
   );

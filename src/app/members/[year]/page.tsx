@@ -1,16 +1,13 @@
-﻿interface YearPageProps {
-  params: { year: string };
-}
-
+﻿interface YearPageProps { params: { year: string }; }
 export default function MembersByYearPage({ params }: YearPageProps) {
   return (
-    <section style={{ padding: "64px min(6vw, 72px)", minHeight: "60vh" }}>
-      <h1 style={{ fontSize: "clamp(2rem, 4vw, 2.75rem)", marginBottom: "16px" }}>
-        ????????? {params.year}
-      </h1>
-      <p style={{ fontSize: "1.05rem", lineHeight: 1.5 }}>
-        ????????????????? API ???????????????????????????? ????????????????????????????????????????.
-      </p>
+    <section className="stack-16" style={{ minHeight:"60vh" }}>
+      <span className="badge">Cohort {params.year}</span>
+      <h1 className="h1">Members — {params.year}</h1>
+      <p className="lead">This view can reuse the same API as <code>/members</code> but auto-filters by the route parameter.</p>
+      <div className="card" style={{ padding:16 }}>
+        <p className="lead">Coming soon: list & filter of classmates enrolled in {params.year}.</p>
+      </div>
     </section>
   );
 }
